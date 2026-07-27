@@ -10,6 +10,8 @@ use Slim\App as SlimApp;
 use Slim\Interfaces\RouteInterface;
 use Slim\Middleware\ContentLengthMiddleware;
 
+use function assert;
+
 /**
  * This class encapsulates the central Slim application,
  * making it easier to create and test.
@@ -51,15 +53,110 @@ final class Application
     }
 
     /**
-     * handleDefaultRoute responds to requests to the default route
-     *
-     * Currently, it's effectively a stub, as the project doesn't dictate nor assume
-     * the kind of application that will be built.
+     * This renders the sign-in form where users can enter and submit their
+     * phone numbers to request an OTP code
      */
-    public function handleDefaultRoute(
+    public function viewSignInForm(
         ServerRequestInterface $request,
         ResponseInterface $response,
     ): ResponseInterface {
+        $view = Twig::fromRequest($request);
+        return $view->render($response, 'signin.html.twig', []);
+    }
+
+    /**
+     * This sends an OTP code to the user's phone number
+     */
+    public function handleSignIn(
+        ServerRequestInterface $request,
+        ResponseInterface $response,
+    ): ResponseInterface {
+        $postData = $request->getParsedBody();
+        $phone    = $postData['phone'] ?? '';
+        if ($phone === '') {
+            $response
+                ->withHeader('Location', '/')
+                ->withStatus(StatusCodeInterface::STATUS_FOUND);
+        }
+
+        $this->session->phone = $postData['phone'];
+
+        $twilio = $this->app->getContainer()->get(Client::class);
+        assert($twilio instanceof Client);
+
+        $verification = $twilio->verify->v2
+            ->services($this->verifyServiceSid)
+            ->verifications
+            ->create($postData['phone'], "sms");
+
+        $response = $response
+            ->withHeader('Location', '/verify')
+            ->withStatus(StatusCodeInterface::STATUS_FOUND);
+
         return $response;
+    }
+
+    /**
+     * This renders the form where users can verify the OTP code that they have
+     * received via SMS
+     */
+    public function viewVerifyOtpForm(
+        ServerRequestInterface $request,
+        ResponseInterface $response,
+    ): ResponseInterface {
+        $view = Twig::fromRequest($request);
+        return $view->render($response, 'verifyotp.html.twig', []);
+    }
+
+    /**
+     * This verifies the OTP code that the user submitted in the verify OTP
+     * code form
+     */
+    public function handleVerifyOtp(
+        ServerRequestInterface $request,
+        ResponseInterface $response,
+    ): ResponseInterface {
+        if (! $this->session->exists('phone') || $this->session->get('phone', '') === '') {
+            $response = $response
+                ->withHeader('Location', '/')
+                ->withStatus(StatusCodeInterface::STATUS_FOUND);
+
+            return $response;
+        }
+
+        $postData = $request->getParsedBody();
+        $code     = $postData['code'] ?? '';
+        if ($code === '') {
+            $response = $response
+                ->withHeader('Location', '/verify')
+                ->withStatus(StatusCodeInterface::STATUS_FOUND);
+
+            return $response;
+        }
+
+        $twilio = $this->app->getContainer()->get(Client::class);
+        assert($twilio instanceof Client);
+
+        $verificationCheck = $twilio->verify->v2
+            ->services($this->verifyServiceSid)
+            ->verificationChecks
+            ->create([
+                "code" => $postData['code'],
+                "to"   => $this->session->phone,
+            ]);
+
+        $this->session->delete('phone');
+
+        return Twig::fromRequest($request)
+            ->render(
+                $response,
+                'verification-status.html.twig',
+                [
+                    'status'  => $verificationCheck->status === 'approved',
+                    'message' => $verificationCheck->status === 'approved'
+                        ? "Verification was successful"
+                        : "Verification failed",
+                ],
+            );
     }
 }
