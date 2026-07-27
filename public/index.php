@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Application;
-use DI\Container;
 use App\Config\RequiredEnvironmentVariables;
+use DI\Container;
 use Dotenv\Dotenv;
 use Slim\Factory\AppFactory;
+use Slim\Views\Twig;
+use Slim\Views\TwigMiddleware;
 use Twilio\Rest\Client;
 
 require __DIR__ . '/../vendor/autoload.php';
@@ -19,8 +21,8 @@ $dotenv->load();
 
 $dotenv->required(
     new RequiredEnvironmentVariables([
-        // App\Config\RequiredEnvironmentVariables\Spec\TwilioRestClient::class,
-        // App\Config\RequiredEnvironmentVariables\Spec\TwilioPhoneNumber::class,
+        App\Config\RequiredEnvironmentVariables\Spec\TwilioRestClient::class,
+        //App\Config\RequiredEnvironmentVariables\Spec\TwilioPhoneNumber::class,
     ])->getEnvVars(),
 )->notEmpty();
 
@@ -36,8 +38,16 @@ $container = new Container();
  */
 $container->set(
     Client::class,
-    fn(): Client => new Client($_ENV['TWILIO_ACCOUNT_SID'], $_ENV['TWILIO_AUTH_TOKEN']),
+    fn(): Client => new Client(
+        $_ENV['TWILIO_ACCOUNT_SID'],
+        $_ENV['TWILIO_AUTH_TOKEN'],
+        $_ENV['TWILIO_VERIFY_SERVICE_SID'],
+    ),
 );
+
+$container->set('session', function () {
+    return new \SlimSession\Helper();
+});
 
 /**
  * With the DI container initialised, it's now set as the Slim application's DI container,
@@ -45,6 +55,16 @@ $container->set(
  */
 AppFactory::setContainer($container);
 $app = AppFactory::createFromContainer($container);
+$app->add(
+    new \Slim\Middleware\Session([
+        'autorefresh' => true,
+        'lifetime'    => '1 hour',
+        'name'        => 'app_session',
+    ]),
+);
+
+$twig = Twig::create(__DIR__ . '/../templates', ['cache' => false]);
+$app->add(TwigMiddleware::create($app, $twig));
 
 /**
  * Finally, initialise a new Application object, initialise the routing table, and boot the
