@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App;
 
+use Fig\Http\Message\StatusCodeInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\App as SlimApp;
+use SlimSession\Helper as SlimSessionHelper;
 use Slim\Interfaces\RouteInterface;
 use Slim\Middleware\ContentLengthMiddleware;
+use Slim\Views\Twig;
+use Twilio\Rest\Client;
 
 use function assert;
 
@@ -18,20 +22,34 @@ use function assert;
  */
 final class Application
 {
+    private SlimSessionHelper $session;
+    private string $verifyServiceSid;
+
     public function __construct(private readonly SlimApp $app)
     {
         $app->add(new ContentLengthMiddleware());
         $app->addBodyParsingMiddleware();
         $app->addRoutingMiddleware();
         $app->addErrorMiddleware(true, true, true);
+
+        $this->session          = new SlimSessionHelper();
+        $this->verifyServiceSid = $_ENV['TWILIO_VERIFY_SERVICE_SID'];
     }
 
     /**
-     * setupRoutes sets up the application's routing table
+     * setupRoutes defines the application's routing table
      */
     public function setupRoutes(): void
     {
-        $this->app->get('/', [$this, 'handleDefaultRoute']);
+        // Render the "Sign In" form
+        $this->app->get('/', [$this, 'viewSignInForm']);
+        // Process the "Sign In" form
+        $this->app->post('/', [$this, 'handleSignIn']);
+
+        // Render the "Verify OTP code" form
+        $this->app->get('/verify', [$this, 'viewVerifyOtpForm']);
+        // Process the "Verify OTP code" form
+        $this->app->post('/verify', [$this, 'handleVerifyOtp']);
     }
 
     /**
@@ -39,7 +57,7 @@ final class Application
      *
      * @return RouteInterface[]
      */
-    public function getRoutes(): array
+    private function getRoutes(): array
     {
         return $this->app->getRouteCollector()->getRoutes();
     }
