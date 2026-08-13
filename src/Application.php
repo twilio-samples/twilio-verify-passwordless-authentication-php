@@ -163,7 +163,9 @@ final class Application
                 "to"   => $this->session->phone,
             ]);
 
-        $this->session->delete('phone');
+        if ($verificationCheck->status === "approved") {
+            $this->session->delete('phone');
+        }
 
         return Twig::fromRequest($request)
             ->render(
