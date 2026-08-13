@@ -42,14 +42,14 @@ final class Application
     public function setupRoutes(): void
     {
         // Render the "Sign In" form
-        $this->app->get('/', [$this, 'viewSignInForm']);
+        $this->app->get('/', [$this, 'showSignInForm']);
         // Process the "Sign In" form
-        $this->app->post('/', [$this, 'handleSignIn']);
+        $this->app->post('/', [$this, 'sendOtpCode']);
 
         // Render the "Verify OTP code" form
-        $this->app->get('/verify', [$this, 'viewVerifyOtpForm']);
+        $this->app->get('/verify', [$this, 'showVerifyOtpForm']);
         // Process the "Verify OTP code" form
-        $this->app->post('/verify', [$this, 'handleVerifyOtp']);
+        $this->app->post('/verify', [$this, 'verifyOtpCode']);
     }
 
     /**
@@ -74,7 +74,7 @@ final class Application
      * This renders the sign-in form where users can enter and submit their
      * phone numbers to request an OTP code
      */
-    public function viewSignInForm(
+    public function showSignInForm(
         ServerRequestInterface $request,
         ResponseInterface $response,
     ): ResponseInterface {
@@ -85,7 +85,7 @@ final class Application
     /**
      * This sends an OTP code to the user's phone number
      */
-    public function handleSignIn(
+    public function sendOtpCode(
         ServerRequestInterface $request,
         ResponseInterface $response,
     ): ResponseInterface {
@@ -118,19 +118,19 @@ final class Application
      * This renders the form where users can verify the OTP code that they have
      * received via SMS
      */
-    public function viewVerifyOtpForm(
+    public function showVerifyOtpForm(
         ServerRequestInterface $request,
         ResponseInterface $response,
     ): ResponseInterface {
         $view = Twig::fromRequest($request);
-        return $view->render($response, 'verifyotp.html.twig', []);
+        return $view->render($response, 'verify.html.twig', []);
     }
 
     /**
      * This verifies the OTP code that the user submitted in the verify OTP
      * code form
      */
-    public function handleVerifyOtp(
+    public function verifyOtpCode(
         ServerRequestInterface $request,
         ResponseInterface $response,
     ): ResponseInterface {
@@ -163,7 +163,9 @@ final class Application
                 "to"   => $this->session->phone,
             ]);
 
-        $this->session->delete('phone');
+        if ($verificationCheck->status === "approved") {
+            $this->session->delete('phone');
+        }
 
         return Twig::fromRequest($request)
             ->render(
